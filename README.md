@@ -28,17 +28,22 @@ Claude Code connects via HTTP+SSE (recommended for network connections).
 
 **Option 1: CLI command**
 ```bash
-claude mcp add pagenodes --transport http --url http://localhost:7778/sse
+claude mcp add --transport sse pagenodes http://localhost:7778/sse
+```
+
+To make it available across all your projects, add `--scope user`:
+```bash
+claude mcp add --transport sse --scope user pagenodes http://localhost:7778/sse
 ```
 
 **Option 2: Edit config directly**
 
-Add to your settings file (`~/.claude/settings.json` or project `.mcp.json`):
+Add to your settings file (`~/.claude.json` for user scope, or `.mcp.json` in your project root for project scope):
 ```json
 {
   "mcpServers": {
     "pagenodes": {
-      "type": "http",
+      "type": "sse",
       "url": "http://localhost:7778/sse"
     }
   }
@@ -70,21 +75,20 @@ Restart Claude Desktop after saving.
 
 Codex stores MCP config in `~/.codex/config.toml`.
 
-**Option 1: CLI command**
-```bash
-codex mcp add pagenodes --transport http --url http://localhost:7778/sse
-```
-
-**Option 2: Edit config directly**
+**For HTTP/SSE** (edit config directly):
 
 Add to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.pagenodes]
-transport = "http"
 url = "http://localhost:7778/sse"
 ```
 
-For stdio mode:
+**For stdio** (CLI command):
+```bash
+codex mcp add pagenodes -- npx pagenodes-mcp --stdio
+```
+
+Or edit config directly:
 ```toml
 [mcp_servers.pagenodes]
 command = "npx"
@@ -112,7 +116,6 @@ Or for stdio:
 {
   "servers": {
     "pagenodes": {
-      "type": "stdio",
       "command": "npx",
       "args": ["pagenodes-mcp", "--stdio"]
     }
