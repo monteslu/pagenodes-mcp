@@ -19,6 +19,7 @@ export const DEFAULT_PORT = 7778;
 // State
 let pagenodesPeer = null;
 let pagenodesConnected = false;
+let clientUrl = null;  // URL of the connected PageNodes browser instance
 
 // SSE connections: Map<sessionId, { res, log }>
 const sseConnections = new Map();
@@ -399,6 +400,7 @@ The MCP server is running and waiting for PageNodes to connect. Once the user co
     const state = await pagenodesPeer.methods.getState();
     return {
       guide: guideContent,
+      clientUrl: clientUrl || null,  // URL of the connected PageNodes browser instance
       ...state
     };
   }
@@ -482,7 +484,8 @@ function createLogger(useStderr = true) {
 // Print status line
 function printStatus(log) {
   const status = pagenodesConnected ? '\x1b[32m● Connected\x1b[0m' : '\x1b[33m○ Waiting\x1b[0m';
-  log(`[PageNodes: ${status}]`);
+  const urlInfo = clientUrl ? ` - ${clientUrl}` : '';
+  log(`[PageNodes: ${status}${urlInfo}]`);
 }
 
 // Start the server
@@ -549,7 +552,8 @@ export function startServer(port = DEFAULT_PORT, options = {}) {
       res.writeHead(200);
       res.end(JSON.stringify({
         status: 'ok',
-        pagenodes: pagenodesConnected ? 'connected' : 'waiting'
+        pagenodes: pagenodesConnected ? 'connected' : 'waiting',
+        clientUrl: clientUrl || null
       }));
       return;
     }
@@ -619,7 +623,8 @@ export function startServer(port = DEFAULT_PORT, options = {}) {
       res.writeHead(200);
       res.end(JSON.stringify({
         status: 'ok',
-        pagenodes: pagenodesConnected ? 'connected' : 'waiting'
+        pagenodes: pagenodesConnected ? 'connected' : 'waiting',
+        clientUrl: clientUrl || null
       }));
       return;
     }
@@ -645,9 +650,19 @@ export function startServer(port = DEFAULT_PORT, options = {}) {
       transport: rawr.transports.websocket(ws)
     });
 
+    // Handle client registration (browser sends its URL)
+    pagenodesPeer.addHandler('registerClient', (info) => {
+      if (info && info.url) {
+        clientUrl = info.url;
+        printStatus(log);
+      }
+      return { success: true };
+    });
+
     ws.on('close', () => {
       pagenodesConnected = false;
       pagenodesPeer = null;
+      clientUrl = null;  // Reset client URL on disconnect
       log(`\n✗ PageNodes disconnected`);
       printStatus(log);
     });
