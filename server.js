@@ -57,7 +57,7 @@ const MCP_TOOLS = [
   },
   {
     name: 'add_nodes',
-    description: 'Add multiple nodes to a flow with automatic wire resolution. Each node has a tempId for wiring - the server converts tempIds to real generated IDs in wires. Node properties (payload, topic, func, broker, etc.) go at top level, not nested.',
+    description: 'Add multiple nodes to a flow with automatic wire resolution. Each node has a tempId for wiring - the server converts tempIds to real generated IDs in wires and streamWires. Node properties (payload, topic, func, broker, etc.) go at top level, not nested.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -77,6 +77,11 @@ const MCP_TOOLS = [
               wires: {
                 type: 'array',
                 description: 'Wires using tempIds: [["b", "c"]] connects output 0 to nodes b and c',
+                items: { type: 'array', items: { type: 'string' } }
+              },
+              streamWires: {
+                type: 'array',
+                description: 'Audio stream wires using tempIds (same format as wires). For audio nodes only.',
                 items: { type: 'array', items: { type: 'string' } }
               }
             },
@@ -138,6 +143,28 @@ const MCP_TOOLS = [
       properties: {
         limit: { type: 'number', description: 'Maximum number of errors to return (default: 10)', default: 10 }
       },
+      required: []
+    }
+  },
+  {
+    name: 'get_logs',
+    description: 'Get recent logs from PageNodes (UI, runtime, audio, etc.). Returns entries with timestamp (t), context (c), level (l), and message (m).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum number of logs to return (default: 100)', default: 100 },
+        context: { type: 'string', description: 'Filter by context (e.g., "ui", "runtime", "audio", "mcp", "worker")' },
+        level: { type: 'string', description: 'Filter by level ("log", "warn", "error")' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'clear_logs',
+    description: 'Clear all logs from the buffer.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
       required: []
     }
   },
@@ -225,6 +252,30 @@ const MCP_TOOLS = [
       type: 'object',
       properties: {},
       required: []
+    }
+  },
+  {
+    name: 'get_mcp_messages',
+    description: 'Get messages from the MCP output queue. Messages are sent by mcp-output nodes in flows (e.g., voice recognition output). Returns and clears messages by default.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum number of messages to return (default: 100)', default: 100 },
+        clear: { type: 'boolean', description: 'Clear returned messages from queue (default: true)', default: true }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'send_mcp_message',
+    description: 'Send a message to all mcp-input nodes in the flows. Use this to inject messages, trigger speech output, or control flows directly without needing a pre-configured inject node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        payload: { description: 'Message payload (string, number, boolean, or object)' },
+        topic: { type: 'string', description: 'Optional topic for filtering (mcp-input nodes can filter by topic)', default: '' }
+      },
+      required: ['payload']
     }
   }
 ];
@@ -350,6 +401,12 @@ The MCP server is running and waiting for PageNodes to connect. Once the user co
         case 'get_errors':
           result = await this.toolGetErrors(args);
           break;
+        case 'get_logs':
+          result = await this.toolGetLogs(args);
+          break;
+        case 'clear_logs':
+          result = await this.toolClearLogs();
+          break;
         case 'get_inject_nodes':
           result = await this.toolGetInjectNodes();
           break;
@@ -373,6 +430,12 @@ The MCP server is running and waiting for PageNodes to connect. Once the user co
           break;
         case 'get_canvas_svg':
           result = await this.toolGetCanvasSvg();
+          break;
+        case 'get_mcp_messages':
+          result = await this.toolGetMcpMessages(args);
+          break;
+        case 'send_mcp_message':
+          result = await this.toolSendMcpMessage(args);
           break;
         default:
           throw new Error(`Unknown tool: ${name}`);
@@ -437,6 +500,14 @@ The MCP server is running and waiting for PageNodes to connect. Once the user co
     return await pagenodesPeer.methods.getErrors(args?.limit || 10);
   }
 
+  async toolGetLogs(args) {
+    return await pagenodesPeer.methods.getLogs(args?.limit || 100, args?.context || null, args?.level || null);
+  }
+
+  async toolClearLogs() {
+    return await pagenodesPeer.methods.clearLogs();
+  }
+
   async toolGetInjectNodes() {
     return await pagenodesPeer.methods.getInjectNodes();
   }
@@ -467,6 +538,14 @@ The MCP server is running and waiting for PageNodes to connect. Once the user co
 
   async toolGetCanvasSvg() {
     return await pagenodesPeer.methods.getCanvasSvg();
+  }
+
+  async toolGetMcpMessages(args) {
+    return await pagenodesPeer.methods.getMessages(args?.limit || 100, args?.clear !== false);
+  }
+
+  async toolSendMcpMessage(args) {
+    return await pagenodesPeer.methods.sendMessage(args.payload, args.topic || '');
   }
 }
 

@@ -207,6 +207,8 @@ Once connected, the AI assistant has access to:
 | `deploy` | Deploy flows to the runtime |
 | `get_debug_output` | Get recent debug panel messages |
 | `get_errors` | Get recent runtime errors |
+| `get_logs` | Get recent logs (UI, runtime, audio, etc.) with optional filters |
+| `clear_logs` | Clear the log buffer |
 | `get_inject_nodes` | List all inject nodes (triggerable) |
 | `inject_node` | Trigger an inject node |
 | `trigger_node` | Send a message to any node's input |

@@ -139,18 +139,7 @@ Config nodes store shared configuration that multiple flow nodes can reference. 
 - **Reusable settings**: Multiple LLM nodes can share one model configuration
 - **Centralized management**: Change the broker URL once, all dependent nodes update
 
-**Available config node types:**
-| Type | Purpose | Used by |
-|------|---------|---------|
-| `mqtt-broker` | MQTT broker connection (URL, credentials, keep-alive) | `mqtt in`, `mqtt out` |
-| `websocket-client` | WebSocket connection (URL, subprotocol) | `websocket in`, `websocket out` |
-| `socketio-client` | Socket.IO connection (server URL, path) | `socketio in`, `socketio out` |
-| `hsync-connection` | hsync server connection (hostname, secret) | `hsync in`, `hsync out` |
-| `hsync-peer` | hsync P2P peer reference | `hsync p2p in`, `hsync p2p out` |
-| `llm-config` | LLM model settings (model, device, precision) | `llm` |
-| `image-ai-config` | Image AI settings (backend, task, model) | `image-ai` |
-| `usb-device` | USB device configuration | `usb in`, `usb out` |
-| `nodebot` | Johnny-Five robot configuration | `gpio in`, `gpio out` |
+Config nodes have `category: "config"` in the node catalog. Use `get_node_details` on a node to see if it references a config node (look for properties whose `type` is a config node type).
 
 **How regular nodes reference config nodes:**
 
@@ -412,6 +401,124 @@ await add_nodes({
 await deploy();
 ```
 
+## Updating Nodes
+
+The `update_node` tool modifies existing nodes. Understanding the node structure is critical to avoid breaking nodes.
+
+### Node Structure
+
+Each node has two parts:
+1. **`_node`** - Core identity and wiring (managed by PageNodes)
+   - `id` - Unique identifier (never change this)
+   - `type` - Node type (never change this)
+   - `name` - Display name
+   - `x`, `y` - Canvas position
+   - `z` - Flow ID
+   - `wires` - Message connections `[[targetId1, targetId2], [targetId3]]`
+   - `streamWires` - Audio connections (same format)
+
+2. **Top-level properties** - Node-specific configuration
+   - Varies by node type (e.g., `payload`, `func`, `broker`, `topic`)
+
+### How update_node Works
+
+`update_node` performs a **shallow merge** of your `updates` object into the node:
+- Properties you specify are updated
+- Properties you don't specify are preserved
+- **Warning**: If you update `_node`, it replaces the entire `_node` object
+
+### Safe Updates (DO THIS)
+
+Update **top-level config properties** directly:
+
+```javascript
+// Update a function node's code
+await update_node({
+  nodeId: "abc123",
+  updates: { func: "msg.payload = msg.payload.toUpperCase();\nreturn msg;" }
+});
+
+// Update position
+await update_node({
+  nodeId: "abc123",
+  updates: { x: 300, y: 200 }
+});
+
+// Update a debug node's settings
+await update_node({
+  nodeId: "xyz789",
+  updates: { complete: "true", active: true }
+});
+
+// Update multiple properties at once
+await update_node({
+  nodeId: "abc123",
+  updates: { payload: "new value", topic: "new/topic" }
+});
+```
+
+### Dangerous Updates (AVOID THIS)
+
+**Never pass a partial `_node` object** - it replaces the whole thing:
+
+```javascript
+// ❌ WRONG - This destroys the node's id, type, z, and wires!
+await update_node({
+  nodeId: "abc123",
+  updates: {
+    _node: { wires: [["newTarget"]] }  // Loses id, type, z, name, x, y!
+  }
+});
+
+// ❌ WRONG - Same problem
+await update_node({
+  nodeId: "abc123",
+  updates: {
+    _node: { name: "New Name" }  // Loses everything except name!
+  }
+});
+```
+
+### Updating Wires
+
+To update wires, you must either:
+
+**Option 1: Delete and recreate the node** (safest)
+```javascript
+// Get current node config from get_flows()
+// Delete old node
+await delete_node({ nodeId: "abc123" });
+// Add new node with correct wires
+await add_nodes({ flowId, nodes: [{ ...nodeConfig, wires: [["newTarget"]] }] });
+```
+
+**Option 2: Update with complete `_node`** (if you must)
+```javascript
+// First, get the current node from get_flows()
+const flows = await get_flows();
+const node = flows.nodes.find(n => n._node.id === "abc123");
+
+// Then update with the COMPLETE _node plus your changes
+await update_node({
+  nodeId: "abc123",
+  updates: {
+    _node: {
+      ...node._node,  // Preserve all existing _node properties
+      wires: [["newTarget", "anotherTarget"]]  // Your change
+    }
+  }
+});
+```
+
+### Summary
+
+| What to update | How to do it |
+|----------------|--------------|
+| Node config (func, payload, topic, etc.) | Pass property directly in `updates` |
+| Position (x, y) | Pass `x` and/or `y` directly in `updates` |
+| Display name | Pass `name` directly in `updates` |
+| Wires | Delete node and recreate, OR pass complete `_node` object |
+
 ## Node Positioning
 
 Nodes have `x`, `y` coordinates on the canvas.
@@ -439,13 +546,16 @@ Guidelines:
 
 ## User Gestures
 
-Browser security APIs require user interaction before activating. These nodes will show "waiting for gesture" until the user clicks somewhere in the PageNodes UI:
-- Camera, microphone (voicerec)
-- Bluetooth, Serial, USB, MIDI
-- Accelerometer, gyroscope, geolocation
-- Notifications, audio oscillator
+Nodes that access hardware or media APIs (camera, microphone, bluetooth, sensors, audio, etc.) require a user gesture before activating. Check the node's help text via `get_node_details` for specifics. Tell users they may need to click in the browser to activate these nodes.
 
-When creating flows with these nodes, tell the user they'll need to click in the browser to activate them.
+## Audio Nodes (Web Audio API)
+
+Audio nodes in the `audio` category use the Web Audio API. They have **two types of ports**:
+
+- **Yellow ports**: Message inputs/outputs for control (play, stop, parameter changes)
+- **Green ports**: Audio stream connections carrying actual audio signal
+
+Use `get_node_details` on audio node types to see their stream port configuration (`streamInputs`, `streamOutputs`) and available parameters. Audio stream wires use `streamWires` in the same format as regular `wires`.
 
 ## Common Patterns
 
@@ -637,6 +747,51 @@ Use this to verify node placement, check for overlapping nodes, or understand th
 - **Gestures**: Hardware/media APIs need user click first
 - **Storage**: IndexedDB/localStorage limits apply
 
+## AI Communication Nodes
+
+PageNodes includes special nodes for bidirectional AI agent communication:
+
+### mcp-in Node
+Receives messages sent by AI agents via MCP. Use this as a source node to let the AI control your flows.
+
+```
+[mcp-in] → [speech]     // AI speaks to you
+[mcp-in] → [function]   // AI triggers processing
+```
+
+**Output:**
+- `msg.payload` - Message content from AI
+- `msg.topic` - Message topic (defaults to "mcp-in")
+
+**Options:**
+- `topic` - Filter to only receive messages with matching topic (empty = all)
+
+### mcp-out Node
+Queues messages for AI agents to retrieve. Use this to send data to the AI.
+
+```
+[voicerec] → [mcp-out]  // Voice input to AI
+[sensor] → [mcp-out]    // Sensor data to AI
+```
+
+**Input:**
+- `msg.payload` - Text or data to queue for AI
+- `msg.topic` - Optional topic/category
+
+**Status:** Shows queue count (e.g., "Queued: 3") when messages are waiting to be retrieved.
+
+### Example: Voice Conversation with AI
+
+```
+Voice input to AI:     [voicerec] → [mcp-out]
+AI response to user:   [mcp-in] → [speech]
+```
+
+The AI agent:
+1. Calls `get_mcp_messages` to receive voice transcriptions
+2. Processes and responds via `send_mcp_message`
+3. The response flows through mcp-in to speech output
+
 ## MCP Tools Reference
 
 | Tool | Purpose |
@@ -646,7 +801,7 @@ Use this to verify node placement, check for overlapping nodes, or understand th
 | `get_flows` | Current flows, nodes, config nodes |
 | `create_flow` | Create new flow tab |
 | `add_nodes` | Add multiple nodes with tempIds. Wires use tempIds, auto-converted to real IDs. |
-| `update_node` | Modify existing node (can update wires) |
+| `update_node` | Modify node properties (see update_node section below) |
 | `delete_node` | Remove node |
 | `deploy` | Push changes to runtime |
 | `get_debug_output` | Retrieve recent debug messages (newest first) |
@@ -658,3 +813,5 @@ Use this to verify node placement, check for overlapping nodes, or understand th
 | `clear_errors` | Clear all error messages. Use before tests for a clean slate. |
 | `get_node_statuses` | Get current status indicators for all nodes (connection states, etc.) |
 | `get_canvas_svg` | Get the SVG of the flow canvas - see visual layout of nodes and wires |
+| `get_mcp_messages` | Retrieve messages from mcp-out nodes. Returns and clears queue by default. |
+| `send_mcp_message` | Send a message to all mcp-in nodes. Use for AI-initiated communication. |
