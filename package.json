@@ -1,7 +1,7 @@
 {
   "name": "pagenodes-mcp",
-  "version": "0.3.0",
-  "description": "MCP server for Claude to edit and deploy PageNodes flows",
+  "version": "0.6.0",
+  "description": "Ainura MCP server - Multi-body PageNodes orchestration for distributed AI",
   "main": "server.js",
   "type": "module",
   "bin": {
@@ -15,6 +15,11 @@
     "mcp",
     "claude",
     "pagenodes",
+    "ainura",
+    "distributed",
+    "iot",
+    "hsync",
+    "swarm",
     "node-red",
     "flow",
     "visual-programming"
