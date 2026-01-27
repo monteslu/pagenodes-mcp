@@ -737,7 +737,7 @@ Receives messages sent by AI agents via MCP. Use this as a source node to let th
 - `topic` - Filter to only receive messages with matching topic (empty = all)
 
 ### mcp-out Node
-Queues messages for AI agents to retrieve. Use this to send data to the AI.
+Sends messages to AI agents. Supports two delivery modes:
 
 ```
 [voicerec] → [mcp-out]  // Voice input to AI
@@ -745,10 +745,16 @@ Queues messages for AI agents to retrieve. Use this to send data to the AI.
 ```
 
 **Input:**
-- `msg.payload` - Text or data to queue for AI
+- `msg.payload` - Text or data to send to AI
 - `msg.topic` - Optional topic/category
 
-**Status:** Shows queue count (e.g., "Queued: 3") when messages are waiting to be retrieved.
+**Delivery Modes:**
+
+1. **MCP queue** (default) — Messages are queued and retrieved when the AI agent polls via `get_mcp_messages`. Status shows queue count (e.g., "Queued: 3").
+
+2. **Gateway mode** — Enable "Send to gateway" to POST messages directly to an AI gateway such as Moltbot or Clawdbot. This immediately wakes the agent — no polling required. Configure `host:port` (default `127.0.0.1:18789`) and an auth key. Status shows the gateway address.
+
+Gateway mode enables **out-of-band activation**: events from sensors, voice input, timers, or any flow can wake an AI agent instantly without the agent needing to poll for messages. This is the recommended approach when using Moltbot/Clawdbot as the agent runtime.
 
 ### Example: Voice Conversation with AI
 
@@ -757,10 +763,12 @@ Voice input to AI:     [voicerec] → [mcp-out]
 AI response to user:   [mcp-in] → [speech]
 ```
 
-The AI agent:
+**With MCP queue mode**, the AI agent:
 1. Calls `get_mcp_messages` to receive voice transcriptions
 2. Processes and responds via `send_mcp_message`
 3. The response flows through mcp-in to speech output
+
+**With gateway mode**, the flow is the same but the agent is woken immediately when voice input arrives — no polling loop needed. The Moltbot/Clawdbot gateway receives the POST and triggers an agent run.
 
 ## MCP Tools Reference
 
