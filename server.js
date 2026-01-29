@@ -423,6 +423,31 @@ const MCP_TOOLS = [
       },
       required: ['deviceId', 'payload']
     }
+  },
+  // === Custom Tools - AI-defined tools backed by flows ===
+  {
+    name: 'get_custom_tools',
+    description: 'List custom tools defined by tool-in nodes on a device. These are AI-callable tools backed by PageNodes flows.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        deviceId: { type: 'string', description: 'REQUIRED: ID of the device to query' }
+      },
+      required: ['deviceId']
+    }
+  },
+  {
+    name: 'use_custom_tool',
+    description: 'Execute a custom tool defined by a tool-in node. The tool runs a flow and returns the result from the tool-out node.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        deviceId: { type: 'string', description: 'REQUIRED: ID of the device' },
+        name: { type: 'string', description: 'Name of the custom tool to execute' },
+        message: { type: 'object', description: 'Message object with payload property (e.g. { payload: "hello", topic: "greeting" })' }
+      },
+      required: ['deviceId', 'name']
+    }
   }
 ];
 
@@ -649,6 +674,12 @@ IMPORTANT: Do not assume devices have the same capabilities. A browser device ca
         case 'send_mcp_message':
           result = await this.toolSendMcpMessage(args);
           break;
+        case 'get_custom_tools':
+          result = await this.toolGetCustomTools(args);
+          break;
+        case 'use_custom_tool':
+          result = await this.toolUseCustomTool(args);
+          break;
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -683,6 +714,15 @@ IMPORTANT: Do not assume devices have the same capabilities. A browser device ca
       // Filter by node capability - just check if the node name is in the list
       if (args?.node && !reg.nodes?.includes(args.node)) continue;
 
+      // Get custom tools for this device
+      let customTools = [];
+      try {
+        const toolsResult = await device.peer.methods.getCustomTools();
+        customTools = (toolsResult?.tools || []).map(t => t.name);
+      } catch {
+        // Device may not support custom tools
+      }
+
       result.push({
         id,
         type: reg.type,
@@ -694,6 +734,7 @@ IMPORTANT: Do not assume devices have the same capabilities. A browser device ca
         // Just the node names - use get_node_details for specifics
         nodes: reg.nodes || [],
         nodeCount: reg.nodes?.length || 0,
+        customTools,
         meta: reg.meta
       });
     }
@@ -710,9 +751,20 @@ IMPORTANT: Do not assume devices have the same capabilities. A browser device ca
     if (error) return content;
 
     const state = await device.peer.methods.getState();
+
+    // Get custom tools with descriptions
+    let customTools = [];
+    try {
+      const toolsResult = await device.peer.methods.getCustomTools();
+      customTools = toolsResult?.tools || [];
+    } catch {
+      // Device may not support custom tools
+    }
+
     return {
       registration: device.registration,
-      ...state
+      ...state,
+      customTools
     };
   }
 
@@ -946,6 +998,28 @@ IMPORTANT: Do not assume devices have the same capabilities. A browser device ca
 
     const result = await device.peer.methods.sendMessage(args.payload, args.topic || '');
     return { deviceId: device.registration.id, ...result };
+  }
+
+  // Get list of custom tools defined on a device
+  async toolGetCustomTools(args) {
+    const { error, device, content } = this.requireDevice(args?.deviceId);
+    if (error) return content;
+
+    const result = await device.peer.methods.getCustomTools();
+    return { deviceId: device.registration.id, ...result };
+  }
+
+  // Execute a custom tool on a device
+  async toolUseCustomTool(args) {
+    const { error, device, content } = this.requireDevice(args?.deviceId);
+    if (error) return content;
+
+    if (!args?.name) {
+      return { error: 'Tool name is required' };
+    }
+
+    const result = await device.peer.methods.useCustomTool(args.name, args.message || {});
+    return { deviceId: device.registration.id, result };
   }
 }
 

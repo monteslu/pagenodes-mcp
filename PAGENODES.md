@@ -743,3 +743,131 @@ AI response to user:   [mcp-in] → [speech]
 3. The response flows through mcp-in to speech output
 
 **With gateway mode**, the flow is the same but the agent is woken immediately when voice input arrives — no polling loop needed.
+
+## Custom Tools (AI-Defined Tools)
+
+PageNodes allows AI agents to create their own tools. Using `tool-in` and `tool-out` nodes, you define custom tools backed by PageNodes flows. This means you can extend your own capabilities at runtime - write JavaScript, access hardware, make API calls, and expose it all as a simple tool.
+
+### How It Works
+
+1. **Create a tool-in node** with a name (e.g., `search_web`) and description
+2. **Wire it through your flow** — http requests, functions, hardware access, whatever
+3. **End with a tool-out node** — returns `msg.payload` as the tool result
+4. **Deploy** — the tool persists and is callable via `use_custom_tool`
+
+### tool-in Node
+
+Defines a custom tool that AI agents can call. When the tool is invoked, this node outputs the message.
+
+**Configuration:**
+- `toolName` — Unique name for the tool (no spaces, like a function name)
+- `description` — What the tool does (helps AI know when to use it)
+
+**Output:**
+- `msg.payload` — The payload from the message passed by the AI
+- `msg.topic` — Optional topic from the message
+- `msg._toolRequest` — Internal context (must pass through to tool-out)
+
+### tool-out Node
+
+Returns the result of a custom tool back to the AI agent. Must receive a message that originated from a `tool-in` node.
+
+**Input:**
+- `msg.payload` — The result to return to the AI (any type)
+- `msg._toolRequest` — Internal context from tool-in (passed through automatically)
+
+### Example: Web Search Tool
+
+```
+[tool-in: search_web] → [http request] → [function: format] → [tool-out]
+```
+
+Flow configuration:
+```javascript
+add_nodes({
+  flowId: flowId,
+  nodes: [
+    {
+      tempId: "toolIn",
+      type: "tool-in",
+      x: 100, y: 100,
+      wires: [["http"]],
+      toolName: "search_web",
+      description: "Searches the web and returns results"
+    },
+    {
+      tempId: "http",
+      type: "http request",
+      x: 270, y: 100,
+      wires: [["format"]],
+      method: "GET",
+      url: "https://api.search.com/search?q={{payload}}"
+    },
+    {
+      tempId: "format",
+      type: "function",
+      x: 440, y: 100,
+      wires: [["toolOut"]],
+      func: "msg.payload = msg.payload.results.slice(0, 5);\nreturn msg;"
+    },
+    {
+      tempId: "toolOut",
+      type: "tool-out",
+      x: 610, y: 100
+    }
+  ]
+});
+```
+
+### Using Custom Tools
+
+**Discovery:**
+
+Custom tools with full descriptions appear in `get_device_details`:
+```json
+{
+  "nodeCatalog": [...],
+  "customTools": [
+    { "name": "search_web", "description": "Searches the web and returns top 5 results" },
+    { "name": "get_weather", "description": "Gets current weather for a city" }
+  ]
+}
+```
+
+The `list_devices` response includes tool names for quick reference:
+```json
+{
+  "id": "device-abc123",
+  "customTools": ["search_web", "get_weather"],
+  ...
+}
+```
+
+Use `get_custom_tools` for a dedicated tool listing with descriptions.
+
+**Execution:**
+
+```javascript
+use_custom_tool({
+  deviceId: "device-abc123",
+  name: "search_web",
+  message: { payload: "PageNodes tutorial", topic: "search" }
+})
+// Returns: { deviceId: "device-abc123", result: <tool-out msg.payload> }
+```
+
+The flow executes with the message, and the result from `tool-out` is returned.
+
+### Use Cases
+
+- **Web APIs** — Wrap any REST API as a tool
+- **Database queries** — Search, aggregate, transform data
+- **Device control** — Hardware interactions via GPIO, serial, bluetooth
+- **Multi-step workflows** — Complex operations as single tool calls
+- **Custom JavaScript** — Any code you can write in a function node becomes a callable tool
+
+### AI-to-AI Collaboration
+
+Custom tools persist in the flow. One AI can create complex tools - multi-step logic, error handling, API integrations - and expose them with clear descriptions. Another AI connects later, sees the available tools via `get_device_details`, and uses them without knowing the implementation.
+
+A more capable model can build sophisticated tools that simpler models can use. The tools become shared infrastructure that accumulates over time - essentially allowing AI to write libraries for other AI.

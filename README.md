@@ -255,6 +255,63 @@ Once connected, the AI assistant has access to these tools (also available via `
 | `get_canvas_svg` | Get SVG of the flow canvas |
 | `get_mcp_messages` | Get messages from mcp-out nodes |
 | `send_mcp_message` | Send a message to mcp-in nodes |
+| `get_custom_tools` | List custom tools defined by tool-in nodes |
+| `use_custom_tool` | Execute a custom tool (AI-defined tool backed by a flow) |
+
+## Custom Tools (AI-Defined Tools)
+
+PageNodes allows AI agents to create their own tools. Using `tool-in` and `tool-out` nodes, you define custom tools backed by PageNodes flows. This means AI can extend its own capabilities at runtime.
+
+### How It Works
+
+1. **Create a tool-in node** with a name (e.g., `get_weather`) and description
+2. **Wire it through your flow** - http requests, functions, hardware access, whatever
+3. **End with a tool-out node** which returns `msg.payload` as the result
+4. **Deploy** - the tool persists and is callable via `use_custom_tool`
+
+### Example
+
+```
+[tool-in: search_web]
+    ↓
+[http request: search API]
+    ↓
+[function: format results]
+    ↓
+[tool-out]
+```
+
+Now any AI can call:
+```javascript
+use_custom_tool({
+  deviceId: "device-abc123",
+  name: "search_web",
+  message: { payload: "PageNodes tutorial" }
+})
+```
+
+The flow executes and returns the result from `tool-out`.
+
+### Discovery
+
+Custom tools with full descriptions appear in `get_device_details`:
+```json
+{
+  "nodeCatalog": [...],
+  "customTools": [
+    { "name": "search_web", "description": "Searches the web and returns top 5 results" },
+    { "name": "get_weather", "description": "Gets current weather for a city" }
+  ]
+}
+```
+
+The `list_devices` response includes tool names for quick reference. Use `get_custom_tools` or `get_device_details` for full details including descriptions.
+
+### AI-to-AI Collaboration
+
+Custom tools persist in the flow. One AI can create complex tools - multi-step logic, error handling, API integrations - and expose them with clear descriptions. Another AI connects later, sees the available tools, and uses them without knowing the implementation.
+
+A more capable model can build tools that simpler models can use. The tools become infrastructure that accumulates over time.
 
 ## License
 
