@@ -1,48 +1,24 @@
-# PageNodes - MCP Integration Guide
+# PageNodes Integration Guide
 
-PageNodes is a visual flow programming editor that runs entirely in the browser. Users drag nodes onto a canvas, connect them with wires, and deploy to run. No server required - the runtime executes in a Web Worker.
+PageNodes is a visual flow programming editor. Users drag nodes onto a canvas, connect them with wires, and deploy to run. It can run standalone in a browser (Web Worker runtime) or as a Node.js server.
 
-This MCP server allows AI agents like Claude to programmatically create, modify, and deploy flows.
-
-> **How it works:** Use `add_nodes` to add multiple nodes at once. Give each node a `tempId` (like "a", "b", "c") and use those tempIds in `wires`. The server automatically converts tempIds to real generated IDs.
+> **How it works:** Use `add_nodes` to add multiple nodes at once. Give each node a `tempId` (like "a", "b", "c") and use those tempIds in `wires`. The system automatically converts tempIds to real generated IDs.
 
 ## Architecture
 
-### PageNodes (standalone)
 ```
-Browser Tab
+PageNodes Instance
 ├── Editor UI (React)
 │   ├── Canvas - drag/drop nodes, draw wires
 │   ├── Palette - available node types
 │   ├── Sidebar - debug output, node help
 │   └── Deploy button
 │
-└── Runtime (Web Worker)
+└── Runtime (Web Worker or Node.js)
     ├── Flow execution engine
     ├── Node instances
     └── Message passing
 ```
-
-### With MCP Server
-```
-Browser Tab                         External
-├── Editor UI ◄───────────────────► User
-│       │
-│       ▼
-└── Runtime (Web Worker)
-        │
-        │ WebSocket + rawr RPC
-        ▼
-    MCP Server (this)
-        │
-        │ stdio / SSE
-        ▼
-    AI Agent (Claude)
-```
-
-The MCP server bridges Claude to the PageNodes runtime. Claude calls MCP tools, which translate to RPC calls to the browser. The browser returns node definitions, current state, and operation results.
-
-**Client identification**: When the browser connects, it registers its URL with the MCP server. This URL is returned in `get_started` as `clientUrl`. This helps identify which PageNodes instance is connected when multiple instances may be running (e.g., `https://pagenodes.com`, `http://localhost:3000`, etc.).
 
 ## How PageNodes Works
 
@@ -59,7 +35,7 @@ Nodes process messages and pass them downstream. A message is a JavaScript objec
 Nodes receive messages on input ports, do something, and send messages out output ports.
 
 ### Node Types
-The node catalog (from `get_started`) contains all available nodes. Each entry describes:
+The node catalog contains all available nodes. Each entry describes:
 - `type` - unique identifier (e.g., "inject", "function", "mqtt in")
 - `category` - grouping (common, input, output, ai, logic, transforms, networking, hardware, storage)
 - `inputs` / `outputs` - number of ports
@@ -70,8 +46,6 @@ Use `get_node_details` to get full property definitions for a specific node type
 - `defaults` - All configurable properties with types, defaults, and descriptions
 - `help` - HTML documentation explaining usage
 - `relatedDocs` - Array of external documentation links: `[{ label: "MDN Docs", url: "https://..." }]`
-
-The `relatedDocs` field is useful for researching advanced node features, browser APIs, or protocol specifications.
 
 ### Node IDs
 
@@ -100,7 +74,7 @@ Every node has a unique ID. Understanding the ID system is important for creatin
 **Example:**
 ```javascript
 // You send:
-await add_nodes({
+add_nodes({
   flowId: "flow1",
   nodes: [
     { tempId: "a", type: "inject", x: 100, y: 100, wires: [["b"]] },
@@ -108,7 +82,7 @@ await add_nodes({
   ]
 });
 
-// Server returns:
+// Response:
 {
   "success": true,
   "nodes": [
@@ -179,7 +153,7 @@ Call `get_flows()` - the response includes a `configNodes` array:
 
 Before creating a new config node, check if one already exists:
 ```javascript
-const flows = await get_flows();
+const flows = get_flows();
 const existingBroker = flows.configNodes.find(c =>
   c.type === 'mqtt-broker' &&
   c.broker === 'wss://test.mosquitto.org:8081'
@@ -190,7 +164,7 @@ if (existingBroker) {
   brokerId = existingBroker.id;
 } else {
   // Create new one
-  const result = await add_nodes({ flowId, nodes: [{ tempId: "broker", type: "mqtt-broker", ... }] });
+  const result = add_nodes({ flowId, nodes: [{ tempId: "broker", type: "mqtt-broker", ... }] });
   brokerId = result.nodes[0].id;
 }
 ```
@@ -203,7 +177,7 @@ Config nodes are created via `add_nodes` like regular nodes, but:
 - Use convention `x: 0, y: 0` for clarity
 
 ```javascript
-await add_nodes({
+add_nodes({
   flowId: flowId,
   nodes: [{
     tempId: "broker",
@@ -224,7 +198,7 @@ await add_nodes({
 
 ```javascript
 // Step 1: Create config node
-const configResult = await add_nodes({
+const configResult = add_nodes({
   flowId,
   nodes: [{
     tempId: "config",
@@ -239,7 +213,7 @@ const configResult = await add_nodes({
 const configId = configResult.nodes[0].id;
 
 // Step 2: Create flow nodes referencing the config
-await add_nodes({
+add_nodes({
   flowId,
   nodes: [
     { tempId: "inject", type: "inject", x: 100, y: 100, wires: [["llm"]], payloadType: "str", payload: "Hello" },
@@ -281,7 +255,7 @@ Changes don't take effect until deployed. Deploy pushes the current flow configu
 
 ### Using add_nodes
 
-The `add_nodes` tool adds multiple nodes in a single call. Each node gets a `tempId` that you use for wiring. The server converts tempIds to real IDs automatically.
+The `add_nodes` function adds multiple nodes in a single call. Each node gets a `tempId` that you use for wiring. The server converts tempIds to real IDs automatically.
 
 **Node properties go at top level.** All properties (id, type, x, y, wires, and node-specific config) are flat on the node object.
 
@@ -319,11 +293,11 @@ Goal: `[inject "hello"] → [function: uppercase] → [debug]`
 
 ```javascript
 // 1. Get a flow ID
-const flows = await get_flows();
+const flows = get_flows();
 const flowId = flows.flows[0].id;
 
 // 2. Add all nodes at once with tempIds
-await add_nodes({
+add_nodes({
   flowId: flowId,
   nodes: [
     {
@@ -351,7 +325,7 @@ await add_nodes({
 });
 
 // 3. Deploy
-await deploy();
+deploy();
 ```
 
 ### Example: Using Config Nodes
@@ -362,11 +336,11 @@ Goal: MQTT subscriber
 
 ```javascript
 // 1. Get flow
-const flows = await get_flows();
+const flows = get_flows();
 const flowId = flows.flows[0].id;
 
 // 2. Create config node first (returns real ID)
-const broker = await add_nodes({
+const broker = add_nodes({
   flowId: flowId,
   nodes: [{
     tempId: "broker",
@@ -379,7 +353,7 @@ const broker = await add_nodes({
 const brokerId = broker.nodes[0].id;  // real generated ID
 
 // 3. Add flow nodes referencing the broker
-await add_nodes({
+add_nodes({
   flowId: flowId,
   nodes: [
     {
@@ -400,12 +374,12 @@ await add_nodes({
 });
 
 // 4. Deploy
-await deploy();
+deploy();
 ```
 
 ## Updating Nodes
 
-The `update_node` tool modifies existing nodes. Understanding the node structure is critical to avoid breaking nodes.
+The `update_node` function modifies existing nodes. Understanding the node structure is critical to avoid breaking nodes.
 
 ### Node Structure
 
@@ -435,25 +409,25 @@ Update **top-level config properties** directly:
 
 ```javascript
 // Update a function node's code
-await update_node({
+update_node({
   nodeId: "abc123",
   updates: { func: "msg.payload = msg.payload.toUpperCase();\nreturn msg;" }
 });
 
 // Update position
-await update_node({
+update_node({
   nodeId: "abc123",
   updates: { x: 300, y: 200 }
 });
 
 // Update a debug node's settings
-await update_node({
+update_node({
   nodeId: "xyz789",
   updates: { complete: "true", active: true }
 });
 
 // Update multiple properties at once
-await update_node({
+update_node({
   nodeId: "abc123",
   updates: { payload: "new value", topic: "new/topic" }
 });
@@ -465,7 +439,7 @@ Since nodes are flat objects, you can update wires directly:
 
 ```javascript
 // Update wires on an existing node
-await update_node({
+update_node({
   nodeId: "abc123",
   updates: { wires: [["newTarget", "anotherTarget"]] }
 });
@@ -475,9 +449,9 @@ Alternatively, delete and recreate the node:
 ```javascript
 // Get current node config from get_flows()
 // Delete old node
-await delete_node({ nodeId: "abc123" });
+delete_node({ nodeId: "abc123" });
 // Add new node with correct wires
-await add_nodes({ flowId, nodes: [{ ...nodeConfig, wires: [["newTarget"]] }] });
+add_nodes({ flowId, nodes: [{ ...nodeConfig, wires: [["newTarget"]] }] });
 ```
 
 ### Summary
@@ -586,8 +560,8 @@ Catch node scope options:
 ## Debugging
 
 - **debug node**: Sends `msg.payload` (or full msg) to sidebar. Essential for seeing what's happening.
-- **get_debug_output**: MCP tool to retrieve recent debug messages programmatically.
-- **get_errors**: MCP tool to retrieve runtime errors (when nodes throw exceptions).
+- **get_debug_output**: Retrieve recent debug messages programmatically.
+- **get_errors**: Retrieve runtime errors (when nodes throw exceptions).
 - **Node status**: Nodes show status indicators (colored dots + text) for their state.
 
 ## Testing Flows Programmatically
@@ -607,15 +581,15 @@ Every message in PageNodes has a `_msgid` for tracing. When you call `inject_nod
 
 ```javascript
 // 1. Trigger inject (uses node's configured payload)
-const result = await inject_node({ nodeId: "abc123" });
+const result = inject_node({ nodeId: "abc123" });
 // Returns: { success: true, _msgid: "xyz789" }
 
 // 2. Check debug output
-const debug = await get_debug_output({ limit: 5 });
+const debug = get_debug_output({ limit: 5 });
 // Find entries where _msgid === "xyz789" to see your message
 
 // 3. Check for errors
-const errors = await get_errors({ limit: 5 });
+const errors = get_errors({ limit: 5 });
 // Errors also include _msgid for correlation
 ```
 
@@ -625,9 +599,9 @@ You can inject a custom payload instead of using the node's configured value:
 
 ```javascript
 // Inject with custom payload
-await inject_node({ nodeId: "abc123", payload: "test data" });
-await inject_node({ nodeId: "abc123", payload: { foo: "bar" } });
-await inject_node({ nodeId: "abc123", payload: 42 });
+inject_node({ nodeId: "abc123", payload: "test data" });
+inject_node({ nodeId: "abc123", payload: { foo: "bar" } });
+inject_node({ nodeId: "abc123", payload: 42 });
 ```
 
 If no payload is provided, the inject node uses its configured `payloadType`:
@@ -643,13 +617,13 @@ Use `trigger_node` to send a message to ANY node's input, not just inject nodes:
 
 ```javascript
 // Send a message directly to a function node
-await trigger_node({
+trigger_node({
   nodeId: "functionNode123",
   msg: { payload: "test data", topic: "test" }
 });
 
 // Trigger a node mid-flow for testing
-await trigger_node({
+trigger_node({
   nodeId: "switchNode456",
   msg: { payload: 150, _msgid: "trace123" }
 });
@@ -666,14 +640,14 @@ Before running tests, clear the buffers to isolate results:
 
 ```javascript
 // Clear previous output
-await clear_debug();
-await clear_errors();
+clear_debug();
+clear_errors();
 
 // Run test
-await inject_node({ nodeId: "abc123" });
+inject_node({ nodeId: "abc123" });
 
 // Check only the new output
-const results = await get_debug_output({ limit: 10 });
+const results = get_debug_output({ limit: 10 });
 ```
 
 ### Monitoring Node Status
@@ -681,7 +655,7 @@ const results = await get_debug_output({ limit: 10 });
 Check if nodes are connected/ready:
 
 ```javascript
-const statuses = await get_node_statuses();
+const statuses = get_node_statuses();
 // Returns: { "nodeId1": { fill: "green", shape: "dot", text: "connected" }, ... }
 ```
 
@@ -695,7 +669,7 @@ Status objects have:
 Get the visual SVG representation of the flow:
 
 ```javascript
-const canvas = await get_canvas_svg();
+const canvas = get_canvas_svg();
 // Returns: { svg: "<svg>...</svg>", width: "5000", height: "5000" }
 ```
 
@@ -722,7 +696,7 @@ Use this to verify node placement, check for overlapping nodes, or understand th
 PageNodes includes special nodes for bidirectional AI agent communication:
 
 ### mcp-in Node
-Receives messages sent by AI agents via MCP. Use this as a source node to let the AI control your flows.
+Receives messages sent by AI agents. Use this as a source node to let the AI control your flows.
 
 ```
 [mcp-in] → [speech]     // AI speaks to you
@@ -750,11 +724,11 @@ Sends messages to AI agents. Supports two delivery modes:
 
 **Delivery Modes:**
 
-1. **MCP queue** (default) — Messages are queued and retrieved when the AI agent polls via `get_mcp_messages`. Status shows queue count (e.g., "Queued: 3").
+1. **Queue mode** (default) — Messages are queued and retrieved when the AI agent polls via `get_mcp_messages`. Status shows queue count (e.g., "Queued: 3").
 
-2. **Gateway mode** — Enable "Send to gateway" to POST messages directly to an AI gateway such as Moltbot or Clawdbot. This immediately wakes the agent — no polling required. Configure `host:port` (default `127.0.0.1:18789`) and an auth key. Status shows the gateway address.
+2. **Gateway mode** — Enable "Send to gateway" to POST messages directly to an AI gateway such as Moltbot. This immediately wakes the agent — no polling required. Configure `host:port` (default `127.0.0.1:18789`) and an auth key. Status shows the gateway address.
 
-Gateway mode enables **out-of-band activation**: events from sensors, voice input, timers, or any flow can wake an AI agent instantly without the agent needing to poll for messages. This is the recommended approach when using Moltbot/Clawdbot as the agent runtime.
+Gateway mode enables **out-of-band activation**: events from sensors, voice input, timers, or any flow can wake an AI agent instantly without the agent needing to poll for messages.
 
 ### Example: Voice Conversation with AI
 
@@ -763,33 +737,9 @@ Voice input to AI:     [voicerec] → [mcp-out]
 AI response to user:   [mcp-in] → [speech]
 ```
 
-**With MCP queue mode**, the AI agent:
+**With queue mode**, the AI agent:
 1. Calls `get_mcp_messages` to receive voice transcriptions
 2. Processes and responds via `send_mcp_message`
 3. The response flows through mcp-in to speech output
 
-**With gateway mode**, the flow is the same but the agent is woken immediately when voice input arrives — no polling loop needed. The Moltbot/Clawdbot gateway receives the POST and triggers an agent run.
-
-## MCP Tools Reference
-
-| Tool | Purpose |
-|------|---------|
-| `get_started` | **CALL THIS FIRST.** Returns this guide + node catalog + current state + `clientUrl` (browser URL). |
-| `get_node_details` | Full definition for a node type (properties, defaults, help) |
-| `get_flows` | Current flows, nodes, config nodes |
-| `create_flow` | Create new flow tab |
-| `add_nodes` | Add multiple nodes with tempIds. Wires use tempIds, auto-converted to real IDs. |
-| `update_node` | Modify node properties (see update_node section below) |
-| `delete_node` | Remove node |
-| `deploy` | Push changes to runtime |
-| `get_debug_output` | Retrieve recent debug messages (newest first) |
-| `get_errors` | Retrieve recent runtime errors (newest first) |
-| `get_inject_nodes` | List all inject nodes with their IDs and configurations |
-| `inject_node` | Trigger an inject node, optionally with custom payload. Returns `_msgid` for tracing. |
-| `trigger_node` | Send a message to ANY node's input. Works with any node type, not just inject. |
-| `clear_debug` | Clear all debug messages. Use before tests for a clean slate. |
-| `clear_errors` | Clear all error messages. Use before tests for a clean slate. |
-| `get_node_statuses` | Get current status indicators for all nodes (connection states, etc.) |
-| `get_canvas_svg` | Get the SVG of the flow canvas - see visual layout of nodes and wires |
-| `get_mcp_messages` | Retrieve messages from mcp-out nodes. Returns and clears queue by default. |
-| `send_mcp_message` | Send a message to all mcp-in nodes. Use for AI-initiated communication. |
+**With gateway mode**, the flow is the same but the agent is woken immediately when voice input arrives — no polling loop needed.

@@ -1123,6 +1123,114 @@ export function startServer(port = DEFAULT_PORT, options = {}) {
       return;
     }
 
+    // Generate Molt-compatible SKILL.md for the entire PageNodes API
+    if (req.method === 'GET' && pathname === '/generate_skill_definition') {
+      let skillMd = `---
+name: pagenodes
+description: "Control PageNodes visual programming flows - create nodes, wire them together, deploy, and trigger. Manage IoT devices, audio systems, and automation flows."
+metadata: {"moltbot":{"requires":{"bins":["curl"]}}}
+---
+
+# PageNodes Skill
+
+Control PageNodes visual programming flows via HTTP. Create nodes, wire them together, deploy, and trigger flows. Manage IoT devices, audio systems, and automation.
+
+## Configuration
+
+Set the PageNodes MCP server URL (default: http://localhost:7778):
+
+\`\`\`bash
+export PAGENODES_URL="http://localhost:7778"
+\`\`\`
+
+## Available Functions
+
+All functions are called via HTTP POST to \`$PAGENODES_URL/func/{function_name}\` with a JSON body.
+
+`;
+
+      for (const tool of MCP_TOOLS) {
+        const props = tool.inputSchema?.properties || {};
+        const required = tool.inputSchema?.required || [];
+
+        // Build example JSON body
+        const exampleBody = {};
+        for (const [name, schema] of Object.entries(props)) {
+          if (schema.type === 'string') exampleBody[name] = `<${name}>`;
+          else if (schema.type === 'number') exampleBody[name] = 0;
+          else if (schema.type === 'boolean') exampleBody[name] = true;
+          else if (schema.type === 'array') exampleBody[name] = [];
+          else if (schema.type === 'object') exampleBody[name] = {};
+          else exampleBody[name] = `<${name}>`;
+        }
+
+        // Build parameter list
+        let paramsDoc = '';
+        for (const [name, schema] of Object.entries(props)) {
+          const isRequired = required.includes(name);
+          const type = schema.type || 'any';
+          const desc = schema.description || '';
+          paramsDoc += `- **${name}** (${type}${isRequired ? ', required' : ''}): ${desc}\n`;
+        }
+
+        skillMd += `### ${tool.name}
+
+${tool.description}
+
+${paramsDoc || '_No parameters_'}
+
+\`\`\`bash
+curl -X POST $PAGENODES_URL/func/${tool.name} -H "Content-Type: application/json" -d '${JSON.stringify(exampleBody)}'
+\`\`\`
+
+`;
+      }
+
+      skillMd += `## Workflow
+
+1. Call \`list_devices\` to see connected PageNodes instances
+2. Use the deviceId in subsequent calls
+3. Use \`get_flows\` to see existing flows and nodes
+4. Use \`add_nodes\` to create new nodes with wiring
+5. Call \`deploy\` to activate changes
+6. Use \`inject_node\` or \`trigger_node\` to run flows
+7. Check \`get_debug_output\` for results
+
+## Notes
+
+- All responses are JSON
+- On error, response contains \`isError: true\` and error message in \`content\`
+- deviceId is required for most operations - get it from \`list_devices\`
+`;
+
+      res.setHeader('Content-Type', 'text/markdown');
+      res.writeHead(200);
+      res.end(skillMd);
+      return;
+    }
+
+    // Function execution endpoint - call any MCP tool via HTTP
+    if (req.method === 'POST' && pathname.startsWith('/func/')) {
+      const toolName = pathname.slice('/func/'.length);
+
+      let body = '';
+      req.on('data', chunk => body += chunk);
+      req.on('end', async () => {
+        try {
+          const args = body ? JSON.parse(body) : {};
+          const result = await mcpHandler.handleToolCall({ name: toolName, arguments: args });
+
+          res.setHeader('Content-Type', 'application/json');
+          res.writeHead(result.isError ? 400 : 200);
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
+
     res.writeHead(404);
     res.end('Not found');
   });

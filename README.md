@@ -1,6 +1,10 @@
 # pagenodes-mcp
 
-MCP server that lets AI assistants build and deploy PageNodes flows.
+Server that lets AI assistants build and deploy PageNodes flows.
+
+Supports two interfaces:
+- **MCP (Model Context Protocol)** - For Claude Code, Claude Desktop, Codex, Cursor, VS Code, etc.
+- **HTTP REST API** - For Moltbot/Clawdbot skills, webhooks, or any HTTP client
 
 ## Install
 
@@ -188,15 +192,48 @@ PageNodes (browser) ──WebSocket──► MCP Server ◄──HTTP/stdio─�
 | `/sse` | GET | SSE connection for MCP clients (returns `endpoint` event with POST URL) |
 | `/message` | POST | JSON-RPC messages from SSE clients |
 | `/mcp` | POST | Legacy direct JSON-RPC endpoint |
-| `/health` | GET | Health check: `{ status, pagenodes: "connected"\|"waiting" }` |
-| `ws://` | WebSocket | PageNodes browser connection (internal) |
+| `/health` | GET | Health check: `{ status, devices }` |
+| `/func/{tool}` | POST | REST endpoint - call any tool via HTTP (see below) |
+| `/generate_skill_definition` | GET | Generate Moltbot-compatible SKILL.md |
+| `ws://` | WebSocket | PageNodes device connection (internal) |
+
+## REST API (for Moltbot / HTTP clients)
+
+Every MCP tool is also available as a REST endpoint:
+
+```bash
+# List connected devices
+curl -X POST http://localhost:7778/func/list_devices
+
+# Get flows from a device
+curl -X POST http://localhost:7778/func/get_flows \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "device-abc123"}'
+
+# Deploy
+curl -X POST http://localhost:7778/func/deploy \
+  -H "Content-Type: application/json" \
+  -d '{"deviceId": "device-abc123"}'
+```
+
+### Moltbot / Clawdbot Integration
+
+Generate a SKILL.md file for Moltbot:
+
+```bash
+curl http://localhost:7778/generate_skill_definition > ~/.clawdbot/skills/pagenodes/SKILL.md
+```
+
+This creates a skill definition with all available functions documented. Moltbot can then control PageNodes via the REST API.
 
 ## Tools
 
-Once connected, the AI assistant has access to:
+Once connected, the AI assistant has access to these tools (also available via `/func/{tool}` REST endpoint):
 
 | Tool | Description |
 |------|-------------|
+| `list_devices` | List all connected PageNodes devices |
+| `get_device_details` | Get detailed info about a specific device |
 | `get_started` | **CALL THIS FIRST.** Returns guide, node catalog, and current state |
 | `get_flows` | Get current flows, nodes, and config nodes |
 | `get_node_details` | Get full details for a specific node type |
@@ -215,7 +252,9 @@ Once connected, the AI assistant has access to:
 | `clear_debug` | Clear debug message buffer |
 | `clear_errors` | Clear error message buffer |
 | `get_node_statuses` | Get status of all nodes (connection states, etc.) |
-| `get_canvas_svg` | Get SVG of the flow canvas
+| `get_canvas_svg` | Get SVG of the flow canvas |
+| `get_mcp_messages` | Get messages from mcp-out nodes |
+| `send_mcp_message` | Send a message to mcp-in nodes |
 
 ## License
 

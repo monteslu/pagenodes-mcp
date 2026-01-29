@@ -28,7 +28,7 @@
   "license": "ISC",
   "dependencies": {
     "commander": "^10.0.0",
-    "rawr": "^0.19.0",
+    "rawr": "^1.0.0",
     "ws": "^8.14.0"
   },
   "devDependencies": {
